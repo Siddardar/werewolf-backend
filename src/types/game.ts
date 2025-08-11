@@ -22,6 +22,7 @@ export interface GameRoom {
   dayCount: number; // tracking for no. of days
   votes: Map<PlayerAction, string>; // (playerId, role) -> targetPlayerId
   timer?: NodeJS.Timeout;
+  timeLeft?: number; 
 }
 
 export interface GameSettings {

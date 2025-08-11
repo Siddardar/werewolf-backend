@@ -25,6 +25,7 @@ export class GameManager {
     socket.on('join-room', (data) => this.joinRoom(socket, data));
     
     socket.on('get-room-info', (data) => this.getRoomInfo(socket, data));
+    socket.on('get-current-timer', (data) => this.getCurrentTimer(socket, data));
     
     socket.on('start-game', (data) => this.startGame(socket, data));
 
@@ -89,7 +90,8 @@ export class GameManager {
 
   private handleReconnection(socket: Socket, data: { userName: string; roomCode: string }) {
     const room = this.rooms.get(data.roomCode);
-    
+    console.log(`Trying to reconnect ${data.userName} to room ${data.roomCode}`);
+
     if (!room || room.gameState === GameState.FINISHED) {
       socket.emit('reconnection-failed', { message: 'Room no longer exists' });
       return;
@@ -122,7 +124,8 @@ export class GameManager {
         })),
         isHost: room.hostId === data.userName,
         hostId: room.hostId,
-        settings: room.settings
+        settings: room.settings,
+        timeLeft: room.timeLeft ? room.timeLeft : null
       });
       
       // Notify other players about reconnection with updated room state
@@ -243,13 +246,13 @@ export class GameManager {
     
 
     if (!room) {
-      socket.emit('get-room-info-failed', { message: 'Room not found' });
+      socket.emit('get-room-info-failure', { message: 'Room not found' });
       return;
     }
 
     const currentUsername = this.socketToPlayer.get(socket.id);
     if (!currentUsername) {
-      socket.emit('get-room-info-failed', { message: 'Player not found' });
+      socket.emit('get-room-info-failure', { message: 'Player not found' });
       return;
     }
 
@@ -329,6 +332,7 @@ export class GameManager {
     // Start the timer
     room.timer = setInterval(() => {
       timeLeft--;
+      room.timeLeft = timeLeft; 
 
       // Emit timer update every 10 seconds (or when time is running low)
       if (timeLeft % 10 === 0 || timeLeft <= 10) {
@@ -345,6 +349,18 @@ export class GameManager {
         timeLeft = room.currentPhase === GamePhase.DAY ? room.settings.dayTime : room.settings.nightTime;
       }
     }, 1000); // Run every second
+  }
+
+  private getCurrentTimer(socket: Socket, data: { roomCode: string }) {
+    const room = this.rooms.get(data.roomCode);
+    if (!room || !room.timer || !room.timeLeft) {
+      socket.emit('get-current-timer-failed', { message: 'No active timer found' });
+      return;
+    }
+
+    socket.emit('get-current-timer-success', {
+      timeLeft: room.timeLeft
+    });
   }
 
   private transitionPhase(room: GameRoom) {
@@ -419,6 +435,24 @@ export class GameManager {
     const room = this.rooms.get(data.roomCode);
     if (!room) {
       socket.emit('vote-failed', { message: 'Voting is not allowed at this time' });
+      return;
+    }
+
+    if (data.currentPlayerRole === Role.SEER) {
+      // Seer-specific voting logic
+      
+      const targetPlayer = room.players.get(data.targetPlayerId);
+      if (targetPlayer) {
+        if (targetPlayer.role === Role.WEREWOLF) {
+            socket.emit('seer-message', { message: `${targetPlayer.name} is a Werewolf` });
+        } else {
+            socket.emit('seer-message', { message: `${targetPlayer.name} is NOT a Werewolf` });
+        }
+
+
+      } else {
+        socket.emit('seer-message', { message: 'Player not found' });
+      }
       return;
     }
 
